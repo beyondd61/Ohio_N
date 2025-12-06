@@ -8,20 +8,23 @@
     "dev": "nodemon server.js",
     "send-newsletter": "node scripts/sendNewsletter.js"
   },
-  "keywords": ["newsletter", "deals", "ohio"],
+  "keywords": [
+    "newsletter",
+    "deals",
+    "ohio"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
+    "@supabase/supabase-js": "^2.86.2",
     "axios": "^1.6.0",
-    "node-cron": "^3.0.3",
-    "sqlite3": "^5.1.6",
-    "dotenv": "^16.3.1",
+    "body-parser": "^1.20.2",
     "cors": "^2.8.5",
-    "body-parser": "^1.20.2"
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "node-cron": "^3.0.3"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
   }
 }
-

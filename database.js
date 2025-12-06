@@ -1,181 +1,114 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const supabase = require('./supabaseClient');
+const crypto = require('crypto');
 
-const DB_PATH = path.join(__dirname, 'newsletter.db');
+async function initDatabase() {
+  try {
+    const { error } = await supabase.from('subscribers').select('id').limit(1);
+    if (error && error.code !== 'PGRST116') {
+      throw error;
+    }
+    console.log('Connected to Supabase database');
+    return true;
+  } catch (error) {
+    console.error('Database connection error:', error);
+    throw error;
+  }
+}
 
-// Initialize database
-function initDatabase() {
-  return new Promise((resolve, reject) => {
-    const db = new sqlite3.Database(DB_PATH, (err) => {
-      if (err) {
-        reject(err);
-        return;
+async function addSubscriber(email, name = null) {
+  const unsubscribeToken = crypto.randomBytes(32).toString('hex');
+
+  const { data, error } = await supabase
+    .from('subscribers')
+    .insert([
+      {
+        email,
+        name,
+        unsubscribe_token: unsubscribeToken
       }
-      console.log('Connected to SQLite database');
-    });
+    ])
+    .select()
+    .single();
 
-    // Create subscribers table
-    db.serialize(() => {
-      db.run(`
-        CREATE TABLE IF NOT EXISTS subscribers (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          email TEXT UNIQUE NOT NULL,
-          name TEXT,
-          subscribed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          active INTEGER DEFAULT 1,
-          unsubscribe_token TEXT UNIQUE
-        )
-      `, (err) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-      });
+  if (error) {
+    if (error.code === '23505') {
+      throw new Error('Email already subscribed');
+    }
+    throw error;
+  }
 
-      // Create deals table for tracking sent deals
-      db.run(`
-        CREATE TABLE IF NOT EXISTS deals (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          business_name TEXT NOT NULL,
-          title TEXT NOT NULL,
-          description TEXT,
-          discount TEXT,
-          valid_until TEXT,
-          source_url TEXT,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          sent_at DATETIME
-        )
-      `, (err) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve(db);
-      });
-    });
-  });
+  return {
+    id: data.id,
+    email: data.email,
+    unsubscribeToken: data.unsubscribe_token
+  };
 }
 
-// Get database instance
-function getDatabase() {
-  return new Promise((resolve, reject) => {
-    const db = new sqlite3.Database(DB_PATH, (err) => {
-      if (err) {
-        reject(err);
-        return;
+async function getActiveSubscribers() {
+  const { data, error } = await supabase
+    .from('subscribers')
+    .select('*')
+    .eq('active', true)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+async function unsubscribe(token) {
+  const { data, error } = await supabase
+    .from('subscribers')
+    .update({ active: false, updated_at: new Date().toISOString() })
+    .eq('unsubscribe_token', token)
+    .select();
+
+  if (error) {
+    throw error;
+  }
+
+  return data && data.length > 0;
+}
+
+async function saveDeal(deal) {
+  const { data, error } = await supabase
+    .from('deals')
+    .insert([
+      {
+        business_name: deal.businessName,
+        title: deal.title,
+        description: deal.description,
+        discount: deal.discount,
+        valid_until: deal.validUntil,
+        source_url: deal.sourceUrl,
+        category: deal.category,
+        location: deal.location
       }
-      resolve(db);
-    });
-  });
+    ])
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data.id;
 }
 
-// Add subscriber
-function addSubscriber(email, name = null) {
-  return new Promise((resolve, reject) => {
-    getDatabase().then(db => {
-      const unsubscribeToken = require('crypto').randomBytes(32).toString('hex');
-      db.run(
-        'INSERT INTO subscribers (email, name, unsubscribe_token) VALUES (?, ?, ?)',
-        [email, name, unsubscribeToken],
-        function(err) {
-          if (err) {
-            if (err.message.includes('UNIQUE constraint')) {
-              reject(new Error('Email already subscribed'));
-            } else {
-              reject(err);
-            }
-          } else {
-            resolve({ id: this.lastID, email, unsubscribeToken });
-          }
-          db.close();
-        }
-      );
-    }).catch(reject);
-  });
-}
+async function markDealAsSent(dealId) {
+  const { data, error } = await supabase
+    .from('deals')
+    .update({ sent_at: new Date().toISOString() })
+    .eq('id', dealId)
+    .select();
 
-// Get all active subscribers
-function getActiveSubscribers() {
-  return new Promise((resolve, reject) => {
-    getDatabase().then(db => {
-      db.all('SELECT * FROM subscribers WHERE active = 1', [], (err, rows) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(rows);
-        }
-        db.close();
-      });
-    }).catch(reject);
-  });
-}
+  if (error) {
+    throw error;
+  }
 
-// Unsubscribe
-function unsubscribe(token) {
-  return new Promise((resolve, reject) => {
-    getDatabase().then(db => {
-      db.run(
-        'UPDATE subscribers SET active = 0 WHERE unsubscribe_token = ?',
-        [token],
-        function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(this.changes > 0);
-          }
-          db.close();
-        }
-      );
-    }).catch(reject);
-  });
-}
-
-// Save deal
-function saveDeal(deal) {
-  return new Promise((resolve, reject) => {
-    getDatabase().then(db => {
-      db.run(
-        `INSERT INTO deals (business_name, title, description, discount, valid_until, source_url)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          deal.businessName,
-          deal.title,
-          deal.description,
-          deal.discount,
-          deal.validUntil,
-          deal.sourceUrl
-        ],
-        function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(this.lastID);
-          }
-          db.close();
-        }
-      );
-    }).catch(reject);
-  });
-}
-
-// Mark deal as sent
-function markDealAsSent(dealId) {
-  return new Promise((resolve, reject) => {
-    getDatabase().then(db => {
-      db.run(
-        'UPDATE deals SET sent_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [dealId],
-        function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(this.changes > 0);
-          }
-          db.close();
-        }
-      );
-    }).catch(reject);
-  });
+  return data && data.length > 0;
 }
 
 module.exports = {
@@ -186,4 +119,3 @@ module.exports = {
   saveDeal,
   markDealAsSent
 };
-
