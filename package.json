@@ -1,0 +1,27 @@
+{
+  "name": "ohio-deals-newsletter",
+  "version": "1.0.0",
+  "description": "Email newsletter aggregating Ohio local business deals and discounts",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "send-newsletter": "node scripts/sendNewsletter.js"
+  },
+  "keywords": ["newsletter", "deals", "ohio"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "axios": "^1.6.0",
+    "node-cron": "^3.0.3",
+    "sqlite3": "^5.1.6",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5",
+    "body-parser": "^1.20.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
+
